@@ -1,0 +1,6 @@
+.vercel
+.vscode
+agentcore/.bedrock_agentcore.yaml
+agentcore/.dockerignore
+agentcore/.python-version
+agentcore/Dockerfile

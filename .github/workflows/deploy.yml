@@ -1,0 +1,128 @@
+name: Deploy Amplify + Vercel
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+jobs:
+  # AWS Amplifyバックエンドをデプロイし、amplify_outputs.jsonを生成する
+  deploy-amplify-backend:
+    runs-on: ubuntu-latest
+    outputs:
+      amplify-outputs: ${{ steps.upload-outputs.outputs.artifact-id }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'nextapp/package-lock.json'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: |
+          cd nextapp
+          npm ci
+
+      - name: Check AWS_APP_ID
+        run: |
+          if [ -z "${{ secrets.AWS_APP_ID }}" ]; then
+            echo "❌ AWS_APP_ID が設定されていません"
+            echo "📝 先に setup-amplify-app.yml を実行してください"
+            exit 1
+          fi
+          echo "✅ AWS_APP_ID: ${{ secrets.AWS_APP_ID }}"
+
+      - name: Deploy Amplify backend
+        run: |
+          cd nextapp
+          npx ampx pipeline-deploy --branch ${{ github.ref_name }} --app-id ${{ secrets.AWS_APP_ID }}
+
+      - name: Verify amplify_outputs.json
+        run: |
+          cd nextapp
+          if [ -f "amplify_outputs.json" ]; then
+            echo "✅ amplify_outputs.json generated successfully"
+            cat amplify_outputs.json
+            # ルートディレクトリにコピー（アーティファクト用）
+            cp amplify_outputs.json ../amplify_outputs.json
+          else
+            echo "❌ amplify_outputs.json not found in nextapp directory"
+            exit 1
+          fi
+
+      - name: Upload amplify_outputs.json
+        id: upload-outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: amplify-outputs
+          path: amplify_outputs.json
+          retention-days: 1
+
+  # Vercelにデプロイする
+  deploy-vercel:
+    runs-on: ubuntu-latest
+    needs: deploy-amplify-backend
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'nextapp/package-lock.json'
+
+      - name: Download amplify_outputs.json
+        uses: actions/download-artifact@v4
+        with:
+          name: amplify-outputs
+          path: .
+
+      - name: Copy amplify_outputs.json to nextapp
+        run: |
+          cp amplify_outputs.json nextapp/amplify_outputs.json
+          echo "✅ Copied amplify_outputs.json to nextapp directory"
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: nextapp
+
+      - name: Set Vercel environment variables
+        run: |
+          echo "🔧 Checking existing environment variables..."
+          
+          # 既存の環境変数をチェック
+          if vercel env ls production --token=${{ secrets.VERCEL_TOKEN }} | grep -q "AGENT_CORE_ENDPOINT"; then
+            echo "✅ AGENT_CORE_ENDPOINT already exists, skipping..."
+          else
+            echo "➕ Adding AGENT_CORE_ENDPOINT..."
+            printf "%s" "${{ secrets.AGENT_CORE_ENDPOINT }}" | vercel env add AGENT_CORE_ENDPOINT production --token=${{ secrets.VERCEL_TOKEN }}
+            echo "✅ AGENT_CORE_ENDPOINT added successfully"
+          fi
+        working-directory: nextapp
+
+      - name: Build Project Artifacts
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: nextapp
+
+      - name: Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: nextapp

@@ -1,0 +1,74 @@
+name: Setup Amplify App (Run Once)
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+jobs:
+  # Amplifyアプリを作成し、APP_IDを出力する
+  setup-amplify-app:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create Amplify app
+        id: create-app
+        run: |
+          if [ -n "${{ secrets.AWS_APP_ID }}" ]; then
+            echo "⚠️  AWS_APP_ID が既に設定されています: ${{ secrets.AWS_APP_ID }}"
+            echo "既存のAmplifyアプリを確認中..."
+            
+            # 既存アプリの存在確認
+            if aws amplify get-app --app-id "${{ secrets.AWS_APP_ID }}" --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+              echo "✅ 既存のAmplifyアプリが見つかりました"
+              exit 0
+            else
+              echo "❌ 指定されたAPP_IDのアプリが見つかりません"
+              echo "新しいアプリを作成します..."
+            fi
+          fi
+          
+          echo "🔧 新しいAmplifyアプリを作成中..."
+          APP_ID=$(aws amplify create-app \
+            --name "nextapp-dev" \
+            --description "Next.js app deployed via GitHub Actions" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'app.appId' \
+            --output text)
+          
+          echo "🎉 新しいAmplifyアプリを作成しました!"
+          echo "App ID: ${APP_ID}"
+          echo "App Name: nextapp-dev"
+          echo "Region: ${{ env.AWS_REGION }}"
+          
+          # devブランチを作成
+          echo "🔧 Creating dev branch..."
+          aws amplify create-branch \
+            --app-id "$APP_ID" \
+            --branch-name "dev" \
+            --region ${{ env.AWS_REGION }}
+          echo "✅ Branch 'dev' created successfully"
+
+      - name: Display setup instructions
+        run: |
+          echo ""
+          echo "🎉 Amplifyアプリのセットアップが完了しました！"
+          echo ""
+          echo "📝 次の手順:"
+          echo "1. GitHub Repository Settings > Secrets and variables > Actions"
+          echo "2. 新しいSecretを追加:"
+          echo "   Name: AWS_APP_ID"
+          echo "   Value: (上記で表示されたApp ID)"
+          echo ""
+          echo "3. その後、以下のワークフローを実行できます:"
+          echo "   - deploy-amplify.yml (Amplifyバックエンドデプロイ)"
+          echo "   - deploy-vercel.yml (Vercelフロントエンドデプロイ)"
+          echo "   - deploy.yml (全体デプロイ)"
