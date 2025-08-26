@@ -131,6 +131,30 @@ async function streamFromAgentCore(
 }
 
 /**
+ * Lambda環境・リクエスト情報をログ出力する
+ */
+function logLambdaEnvInfo(request: NextRequest) {
+  // Lambda環境変数一覧のみログ出力
+  console.log('[Lambda Env] All env keys:', Object.keys(process.env));
+
+  // リクエストヘッダーからCloudFront
+  const cfHeaders = (Array.from(request.headers.entries()) as [string, string][]).filter(([k]) => k.toLowerCase().startsWith('cloudfront-'));
+  if (cfHeaders.length > 0) {
+    console.log('[Lambda Env] CloudFront headers detected:', cfHeaders.map(([k, v]) => `${k}: ${v}`));
+  } else {
+    console.log('[Lambda Env] No CloudFront headers detected');
+  }
+
+  // リクエストヘッダーから関数URLを推測
+  const functionUrlHeader = request.headers.get('x-amzn-function-url-request-id');
+  if (functionUrlHeader) {
+    console.log('[Lambda Env] Lambda Function URL header detected:', functionUrlHeader);
+  } else {
+    console.log('[Lambda Env] No Lambda Function URL header detected');
+  }
+}
+
+/**
  * SSE（Server-Sent Events）を使用してAWS Bedrock AgentCoreとの通信を処理するAPIエンドポイント
  * 
  * フロー:
@@ -144,6 +168,8 @@ async function streamFromAgentCore(
  */
 export async function POST(request: NextRequest) {
   try {
+    logLambdaEnvInfo(request);
+
     // ユーザー認証の実行
     const { accessToken } = await authenticate(request);
 
