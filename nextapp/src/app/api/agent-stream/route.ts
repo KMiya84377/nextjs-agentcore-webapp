@@ -134,24 +134,12 @@ async function streamFromAgentCore(
  * Lambda環境・リクエスト情報をログ出力する
  */
 function logLambdaEnvInfo(request: NextRequest) {
-  // Lambda環境変数一覧のみログ出力
-  console.log('[Lambda Env] All env keys:', Object.keys(process.env));
+  // Lambda環境変数の内容（キーと値のペア）をすべてログ出力
+  console.log('[Lambda Env] All env:', process.env);
 
-  // リクエストヘッダーからCloudFront
-  const cfHeaders = (Array.from(request.headers.entries()) as [string, string][]).filter(([k]) => k.toLowerCase().startsWith('cloudfront-'));
-  if (cfHeaders.length > 0) {
-    console.log('[Lambda Env] CloudFront headers detected:', cfHeaders.map(([k, v]) => `${k}: ${v}`));
-  } else {
-    console.log('[Lambda Env] No CloudFront headers detected');
-  }
-
-  // リクエストヘッダーから関数URLを推測
-  const functionUrlHeader = request.headers.get('x-amzn-function-url-request-id');
-  if (functionUrlHeader) {
-    console.log('[Lambda Env] Lambda Function URL header detected:', functionUrlHeader);
-  } else {
-    console.log('[Lambda Env] No Lambda Function URL header detected');
-  }
+  // リクエストヘッダー全体をログ出力
+  const headersObj = Object.fromEntries(request.headers.entries());
+  console.log('[Lambda Env] Request headers:', headersObj);
 }
 
 /**
